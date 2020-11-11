@@ -1,0 +1,30 @@
+#!/bin/lua
+
+local socket_factory = require("socket")
+
+local function main()
+  local host = arg[1]
+  local port = arg[2]
+
+  if host == nil or port == nil then
+    error("set host and port as args of the script")
+  end
+
+  local sock = socket_factory.tcp()
+  sock:connect(host, port)
+
+  while true do
+    local input = io.read("*l")
+    if input == nil then break end
+
+    local ok, err = sock:send(input .. "\n")
+    if not ok then error(err) end
+
+    local str, err1 = sock:receive("*l")
+    if not str then error(err1) end
+
+    print(str)
+  end
+end
+
+main()

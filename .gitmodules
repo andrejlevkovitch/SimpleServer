@@ -1,0 +1,3 @@
+[submodule "third-party/simple_logs"]
+	path = third-party/simple_logs
+	url = https://github.com/andrejlevkovitch/simple_logs
