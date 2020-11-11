@@ -101,7 +101,19 @@ int main(int argc, char *argv[]) {
     ioContext.stop();
   });
 
+
+  std::list<std::thread> threadPool;
+  for (int i = 0; i < 3; ++i) {
+    threadPool.emplace_back([&ioContext]() {
+      ioContext.run();
+    });
+  }
+
   ioContext.run();
+
+  for (std::thread &th : threadPool) {
+    th.join();
+  }
 
 
   return EXIT_SUCCESS;
