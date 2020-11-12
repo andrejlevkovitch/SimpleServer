@@ -50,14 +50,7 @@ public:
       return;
     }
 
-    asio::async_read(socket_,
-                     asio::dynamic_buffer(reqBuffer_),
-                     asio::transfer_at_least(1),
-                     std::bind(&Session::operator(),
-                               this,
-                               std::move(self),
-                               std::placeholders::_1,
-                               std::placeholders::_2));
+    self->operator()(std::move(self), error_code{}, 0);
   }
 
   void close() {
@@ -230,7 +223,8 @@ public:
   ServerImplStream(asio::io_context &    ioContext,
                    Endpoint              endpoint,
                    RequestHandlerFactory reqHandlerFactory)
-      : acceptor_{ioContext}
+      : ioContext_{ioContext}
+      , acceptor_{ioContext}
       , reqHandlerFactory_{std::move(reqHandlerFactory)} {
     LOG_TRACE("construct sever");
 
@@ -246,11 +240,7 @@ public:
 
     std::shared_ptr<ServerImpl> self = this->shared_from_this();
 
-    acceptor_.async_accept(std::bind(&ServerImplStream::operator(),
-                                     this,
-                                     std::move(self),
-                                     std::placeholders::_1,
-                                     std::placeholders::_2));
+    this->operator()(self, error_code{}, Socket{this->ioContext_});
   }
 
   void stopAccepting() noexcept(false) override {
@@ -327,6 +317,7 @@ private:
 
 
 private:
+  asio::io_context &    ioContext_;
   Acceptor              acceptor_;
   RequestHandlerFactory reqHandlerFactory_;
 
