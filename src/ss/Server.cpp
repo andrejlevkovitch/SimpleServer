@@ -193,7 +193,7 @@ private:
   RequestHandler reqHandler_;
   std::string    reqBuffer_;
   std::string    resBuffer_;
-}; // namespace ss
+};
 
 
 class ServerImpl {
