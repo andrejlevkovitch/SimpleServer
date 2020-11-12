@@ -69,7 +69,7 @@ public:
       LOG_ERROR(err.message());
     }
 
-    socket_.shutdown(Protocol::socket::shutdown_both, err);
+    socket_.shutdown(Socket::shutdown_both, err);
     if (err.failed()) {
       LOG_ERROR(err.message());
     }
@@ -207,19 +207,19 @@ public:
 };
 
 
-template <typename Endpoint>
-class ServerImplBase
+template <typename Protocol>
+class ServerImplStream
     : public ServerImpl
     , public asio::coroutine {
 public:
-  using Protocol   = typename Endpoint::protocol_type;
+  using Endpoint   = typename Protocol::endpoint;
   using SessionPtr = std::shared_ptr<Session<Protocol>>;
   using Socket     = asio::basic_stream_socket<Protocol>;
   using Acceptor   = asio::basic_socket_acceptor<Protocol>;
 
-  ServerImplBase(asio::io_context &    ioContext,
-                 Endpoint              endpoint,
-                 RequestHandlerFactory reqHandlerFactory)
+  ServerImplStream(asio::io_context &    ioContext,
+                   Endpoint              endpoint,
+                   RequestHandlerFactory reqHandlerFactory)
       : acceptor_{ioContext}
       , reqHandlerFactory_{std::move(reqHandlerFactory)} {
     LOG_TRACE("construct sever");
@@ -277,7 +277,7 @@ private:
 
     reenter(this) {
       for (;;) {
-        yield acceptor_.async_accept(std::bind(&ServerImplBase::operator(),
+        yield acceptor_.async_accept(std::bind(&ServerImplStream::operator(),
                                                this,
                                                std::move(self),
                                                std::placeholders::_1,
@@ -382,9 +382,9 @@ ServerPtr ServerBuilder::build() const {
     LOG_DEBUG("listen endpoint: %1%", endpoint);
 
 
-    impl = std::make_shared<ServerImplBase<tcp::endpoint>>(ioContext_,
-                                                           endpoint,
-                                                           reqHandlerFactory_);
+    impl = std::make_shared<ServerImplStream<tcp>>(ioContext_,
+                                                   endpoint,
+                                                   reqHandlerFactory_);
   } break;
   case Server::Protocol::Unix: {
     stream_protocol::endpoint endpoint{endpoint_};
@@ -392,10 +392,10 @@ ServerPtr ServerBuilder::build() const {
     LOG_DEBUG("listen endpoint: %1%", endpoint);
 
 
-    impl = std::make_shared<ServerImplBase<stream_protocol::endpoint>>(
-        ioContext_,
-        endpoint,
-        reqHandlerFactory_);
+    impl =
+        std::make_shared<ServerImplStream<stream_protocol>>(ioContext_,
+                                                            endpoint,
+                                                            reqHandlerFactory_);
   } break;
   }
 
