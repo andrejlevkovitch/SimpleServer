@@ -5,7 +5,6 @@ cmake_minimum_required(VERSION 3.12)
 project(ss)
 
 include(cmake/build.cmake)
-include(cmake/doxygen.cmake)
 
 find_package(Boost REQUIRED)
 find_package(Threads REQUIRED)
