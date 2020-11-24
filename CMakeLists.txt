@@ -19,11 +19,9 @@ set(PROJECT_SRC
 
 add_library(${PROJECT_NAME} src/ss/Server.cpp)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
-target_link_libraries(${PROJECT_NAME} PUBLIC
+target_link_libraries(${PROJECT_NAME} PRIVATE
   Boost::boost
-  ${Boost_LIBRARIES}
   simple_logs
-  Threads::Threads
   )
 target_include_directories(${PROJECT_NAME} PUBLIC
   include
@@ -32,4 +30,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 add_executable(echo_server test/main.cpp)
 target_link_libraries(echo_server PRIVATE
   ${PROJECT_NAME}
+  simple_logs
+  Threads::Threads
   )
