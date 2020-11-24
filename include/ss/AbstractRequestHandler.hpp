@@ -20,9 +20,7 @@ public:
     return boost::system::error_code();
   };
 
-  virtual ss::error_code atSessionClose() noexcept {
-    return boost::system::error_code();
-  };
+  virtual void atSessionClose() noexcept {};
 
   /**\brief handle request and produce responce
    * \param reqIgnoreLength by default is 0. If 0, then request buffer will be

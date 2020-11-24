@@ -1,11 +1,11 @@
 // main.cpp
 
-#include "logs.hpp"
 #include "ss/Server.hpp"
 #include <algorithm>
 #include <boost/asio/signal_set.hpp>
 #include <iterator>
 #include <regex>
+#include <simple_logs/logs.hpp>
 #include <string>
 
 
@@ -13,8 +13,13 @@ class EchoReqHandler final : public ss::AbstractRequestHandler {
 public:
   ss::error_code
   atSessionStart(std::string_view remoteEndpoint) noexcept override {
-    LOG_INFO("start session for remote endpoint: %1%", remoteEndpoint);
+    remoteEndpoint_ = remoteEndpoint;
+    LOG_INFO("start session for remote endpoint: %1%", remoteEndpoint_);
     return {};
+  }
+
+  void atSessionClose() noexcept override {
+    LOG_INFO("close session for remote endpoint: %1%", remoteEndpoint_);
   }
 
   ss::error_code handle(std::string_view request,
@@ -34,6 +39,9 @@ public:
 
     return ss::error::make_error_code(ss::error::SessionError::Success);
   }
+
+private:
+  std::string remoteEndpoint_;
 };
 
 class EchoReqHandlerFactory final : public ss::AbstractRequestHandlerFactory {

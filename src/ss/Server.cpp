@@ -1,20 +1,22 @@
 // Server.cpp
 
 #include "ss/Server.hpp"
-#include "logs.hpp"
 #include <boost/asio/coroutine.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
-#include <boost/asio/yield.hpp>
 #include <list>
 #include <regex>
+#include <simple_logs/logs.hpp>
 #include <sstream>
+#include <thread>
 
 #define REQ_BUFFER_RESERVED 1024 * 1000
 #define RES_BUFFER_RESERVED 1024 * 1000
 
+// XXX must be after <thread>
+#include <boost/asio/yield.hpp>
 
 namespace ss {
 namespace asio = boost::asio;
@@ -66,18 +68,23 @@ public:
 
     LOG_TRACE("close session");
 
-
-    error_code err = reqHandler_->atSessionClose();
-    if (err.failed()) {
-      LOG_ERROR(err.message());
-    }
+    error_code err;
 
     // cancel all async operation with this socket
     socket_.cancel(err);
     if (err.failed()) {
       LOG_ERROR(err.message());
     }
+  }
 
+  /**\note all async operations with socket must be already canceled
+   */
+  void atClose() {
+    LOG_TRACE("at session close");
+
+    reqHandler_->atSessionClose();
+
+    error_code err;
     socket_.shutdown(Socket::shutdown_both, err);
     if (err.failed()) {
       LOG_ERROR(err.message());
@@ -110,7 +117,7 @@ private:
         break;
       }
 
-      self->close();
+      self->atClose();
 
       LOG_DEBUG("end of session coroutine");
       return;
@@ -118,7 +125,6 @@ private:
 
     reenter(this) {
       for (;;) {
-      ReadMore:
         yield asio::async_read(socket_,
                                asio::dynamic_buffer(reqBuffer_),
                                asio::transfer_at_least(1),
@@ -164,16 +170,14 @@ private:
               }
 
               // unexpected errors
-              LOG_ERROR(err.message());
-
-              close();
+              // self->operator()(self, err, 0);
               return;
             }
           }
         }
 
         if (resBuffer_.empty()) {
-          goto ReadMore;
+          continue;
         }
 
         yield asio::async_write(socket_,
