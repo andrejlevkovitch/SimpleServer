@@ -11,6 +11,12 @@
 
 class EchoReqHandler final : public ss::AbstractRequestHandler {
 public:
+  ss::error_code
+  atSessionStart(std::string_view remoteEndpoint) noexcept override {
+    LOG_INFO("start session for remote endpoint: %1%", remoteEndpoint);
+    return {};
+  }
+
   ss::error_code handle(std::string_view request,
                         ResponseInserter respInserter,
                         size_t &         reqIgnoreLength) noexcept override {

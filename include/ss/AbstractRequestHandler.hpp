@@ -12,7 +12,11 @@ public:
 
   virtual ~AbstractRequestHandler() = default;
 
-  virtual ss::error_code atSessionStart() noexcept {
+  /**\note that remoteEndpoint can be empty, for example in case of using unix
+   * socks
+   */
+  virtual ss::error_code atSessionStart([
+      [maybe_unused]] std::string_view remoteEndpoint) noexcept {
     return boost::system::error_code();
   };
 

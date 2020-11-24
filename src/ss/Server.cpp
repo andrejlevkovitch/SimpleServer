@@ -10,6 +10,7 @@
 #include <boost/asio/yield.hpp>
 #include <list>
 #include <regex>
+#include <sstream>
 
 #define REQ_BUFFER_RESERVED 1024 * 1000
 #define RES_BUFFER_RESERVED 1024 * 1000
@@ -27,7 +28,8 @@ class Session final
     : public asio::coroutine
     , public std::enable_shared_from_this<Session<Protocol>> {
 public:
-  using Socket = asio::basic_stream_socket<Protocol>;
+  using Socket   = asio::basic_stream_socket<Protocol>;
+  using Endpoint = typename Protocol::endpoint;
 
   Session(Socket socket, RequestHandler handler) noexcept
       : socket_{std::move(socket)}
@@ -43,7 +45,10 @@ public:
 
     std::shared_ptr<Session> self = this->shared_from_this();
 
-    error_code err = self->reqHandler_->atSessionStart();
+
+    std::stringstream remoteEndpoint;
+    remoteEndpoint << socket_.remote_endpoint();
+    error_code err = self->reqHandler_->atSessionStart(remoteEndpoint.str());
     if (err.failed()) {
       LOG_ERROR(err.message());
       LOG_WARNING("session doesn't start, because get handler error");
