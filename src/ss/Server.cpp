@@ -57,7 +57,7 @@ public:
       return;
     }
 
-    self->operator()(std::move(self), error_code{}, 0);
+    this->operator()(std::move(self), error_code{}, 0);
   }
 
   void close() {
@@ -117,7 +117,7 @@ private:
         break;
       }
 
-      self->atClose();
+      this->atClose();
 
       LOG_DEBUG("end of session coroutine");
       return;
@@ -170,7 +170,7 @@ private:
               }
 
               // unexpected errors
-              // self->operator()(self, err, 0);
+              this->operator()(std::move(self), err, 0);
               return;
             }
           }
@@ -249,7 +249,7 @@ public:
 
     std::shared_ptr<ServerImpl> self = this->shared_from_this();
 
-    this->operator()(self, error_code{}, Socket{this->ioContext_});
+    this->operator()(std::move(self), error_code{}, Socket{this->ioContext_});
   }
 
   void stopAccepting() noexcept(false) override {
