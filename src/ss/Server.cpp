@@ -1,10 +1,12 @@
 // Server.cpp
 
 #include "ss/Server.hpp"
+#include <boost/asio/bind_executor.hpp>
 #include <boost/asio/coroutine.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/read.hpp>
+#include <boost/asio/strand.hpp>
 #include <boost/asio/write.hpp>
 #include <list>
 #include <regex>
@@ -30,11 +32,14 @@ class Session final
     : public asio::coroutine
     , public std::enable_shared_from_this<Session<Protocol>> {
 public:
+  using Self     = std::shared_ptr<Session>;
   using Socket   = asio::basic_stream_socket<Protocol>;
   using Endpoint = typename Protocol::endpoint;
+  using Strand   = asio::strand<asio::io_context::executor_type>;
 
   Session(Socket socket, RequestHandler handler) noexcept
       : socket_{std::move(socket)}
+      , strand_{socket_.get_executor()}
       , reqHandler_{handler} {
     LOG_TRACE("construct session");
 
@@ -45,7 +50,7 @@ public:
   void start() {
     LOG_TRACE("start new session");
 
-    std::shared_ptr<Session> self = this->shared_from_this();
+    Self self = this->shared_from_this();
 
 
     std::stringstream remoteEndpoint;
@@ -102,19 +107,14 @@ public:
 
 
 private:
-  void
-  operator()(std::shared_ptr<Session> self, error_code err, size_t transfered) {
+  void operator()(Self self, error_code err, size_t transfered) {
     if (err.failed()) {
-      switch (err.value()) {
-      case asio::error::eof:
+      if (err == asio::error::eof) {
         LOG_DEBUG("client close connection");
-        break;
-      case asio::error::operation_aborted:
+      } else if (err == asio::error::operation_aborted) {
         LOG_DEBUG("session canceled");
-        break;
-      default:
+      } else {
         LOG_ERROR(err.message());
-        break;
       }
 
       this->atClose();
@@ -125,14 +125,16 @@ private:
 
     reenter(this) {
       for (;;) {
-        yield asio::async_read(socket_,
-                               asio::dynamic_buffer(reqBuffer_),
-                               asio::transfer_at_least(1),
-                               std::bind(&Session::operator(),
-                                         this,
-                                         std::move(self),
-                                         std::placeholders::_1,
-                                         std::placeholders::_2));
+        yield asio::async_read(
+            socket_,
+            asio::dynamic_buffer(reqBuffer_),
+            asio::transfer_at_least(1),
+            asio::bind_executor(strand_,
+                                std::bind(&Session::operator(),
+                                          this,
+                                          std::move(self),
+                                          std::placeholders::_1,
+                                          std::placeholders::_2)));
 
         LOG_DEBUG("readed: %1.3fKb", transfered / 1024.);
 
@@ -157,8 +159,7 @@ private:
                 continue;
               }
             } else { // if some error caused
-              if (error::isSessionErrorCategory(err.category()) &&
-                  err.value() == error::SessionError::PartialData) {
+              if (err == error::SessionError::PartialData) {
                 reqBuffer_.erase(0,
                                  reqBufferView.data() - reqBuffer_.data() +
                                      reqIgnoreLength);
@@ -180,14 +181,16 @@ private:
           continue;
         }
 
-        yield asio::async_write(socket_,
-                                asio::dynamic_buffer(resBuffer_),
-                                asio::transfer_all(),
+        yield asio::async_write(
+            socket_,
+            asio::dynamic_buffer(resBuffer_),
+            asio::transfer_all(),
+            asio::bind_executor(strand_,
                                 std::bind(&Session::operator(),
                                           this,
                                           std::move(self),
                                           std::placeholders::_1,
-                                          std::placeholders::_2));
+                                          std::placeholders::_2)));
 
         LOG_DEBUG("writed: %1.3fKb", transfered / 1024.);
 
@@ -199,6 +202,7 @@ private:
 
 private:
   Socket         socket_;
+  Strand         strand_;
   RequestHandler reqHandler_;
   std::string    reqBuffer_;
   std::string    resBuffer_;
@@ -224,10 +228,12 @@ class ServerImplStream
     , public asio::coroutine
     , public std::enable_shared_from_this<ServerImplStream<Protocol>> {
 public:
+  using Self       = std::shared_ptr<ServerImpl>;
   using Endpoint   = typename Protocol::endpoint;
   using SessionPtr = std::shared_ptr<Session<Protocol>>;
   using Socket     = asio::basic_stream_socket<Protocol>;
   using Acceptor   = asio::basic_socket_acceptor<Protocol>;
+  using Strand     = asio::strand<asio::io_context::executor_type>;
 
   ServerImplStream(asio::io_context &    ioContext,
                    Endpoint              endpoint,
@@ -242,12 +248,14 @@ public:
     acceptor_.set_option(typename Acceptor::reuse_address(true));
     acceptor_.bind(endpoint);
     acceptor_.listen(Socket::max_listen_connections);
+
+    strandPtr_ = std::make_shared<Strand>(acceptor_.get_executor());
   }
 
   void startAccepting() noexcept override {
     LOG_TRACE("start accepting");
 
-    std::shared_ptr<ServerImpl> self = this->shared_from_this();
+    Self self = this->shared_from_this();
 
     this->operator()(std::move(self), error_code{}, Socket{this->ioContext_});
   }
@@ -272,9 +280,7 @@ public:
 
 
 private:
-  void operator()(std::shared_ptr<ServerImpl> self,
-                  error_code                  err,
-                  Socket                      socket) noexcept {
+  void operator()(Self self, error_code err, Socket socket) noexcept {
     if (err.failed()) {
       if (err.value() == asio::error::operation_aborted) {
         LOG_DEBUG("accepting canceled");
@@ -288,11 +294,13 @@ private:
 
     reenter(this) {
       for (;;) {
-        yield acceptor_.async_accept(std::bind(&ServerImplStream::operator(),
-                                               this,
-                                               std::move(self),
-                                               std::placeholders::_1,
-                                               std::placeholders::_2));
+        yield acceptor_.async_accept(
+            asio::bind_executor(*strandPtr_,
+                                std::bind(&ServerImplStream::operator(),
+                                          this,
+                                          std::move(self),
+                                          std::placeholders::_1,
+                                          std::placeholders::_2)));
 
         LOG_DEBUG("accept new connection");
         try {
@@ -326,9 +334,10 @@ private:
 
 
 private:
-  asio::io_context &    ioContext_;
-  Acceptor              acceptor_;
-  RequestHandlerFactory reqHandlerFactory_;
+  asio::io_context &      ioContext_;
+  std::shared_ptr<Strand> strandPtr_;
+  Acceptor                acceptor_;
+  RequestHandlerFactory   reqHandlerFactory_;
 
   std::list<SessionPtr> sessions_;
 };

@@ -52,3 +52,10 @@ isSessionErrorCategory(const boost::system::error_category &category) noexcept {
 }
 } // namespace error
 } // namespace ss
+
+namespace boost::system {
+template <>
+struct is_error_code_enum<ss::error::SessionError> {
+  static const bool value = true;
+};
+} // namespace boost::system
