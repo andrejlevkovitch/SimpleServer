@@ -7,6 +7,7 @@
 #include <boost/asio/local/stream_protocol.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/strand.hpp>
+#include <boost/asio/version.hpp>
 #include <boost/asio/write.hpp>
 #include <list>
 #include <regex>
@@ -35,12 +36,22 @@ public:
   using Self     = std::shared_ptr<Session>;
   using Socket   = asio::basic_stream_socket<Protocol>;
   using Endpoint = typename Protocol::endpoint;
-  using Strand   = asio::strand<asio::io_context::executor_type>;
+  using Strand   = asio::strand<typename Socket::executor_type>;
 
   Session(Socket socket, RequestHandler handler) noexcept
-      : socket_{std::move(socket)}
-      , strand_{socket_.get_executor()}
-      , reqHandler_{handler} {
+      : socket_ {
+    std::move(socket)
+  }
+#if BOOST_ASIO_VERSION > 101400
+  , strand_ {
+    asio::make_strand(socket_.get_executor())
+  }
+#else
+  , strand_ {
+    socket_.get_executor()
+  }
+#endif
+  , reqHandler_{handler} {
     LOG_TRACE("construct session");
 
     reqBuffer_.reserve(REQ_BUFFER_RESERVED);
@@ -233,7 +244,6 @@ public:
   using SessionPtr = std::shared_ptr<Session<Protocol>>;
   using Socket     = asio::basic_stream_socket<Protocol>;
   using Acceptor   = asio::basic_socket_acceptor<Protocol>;
-  using Strand     = asio::strand<asio::io_context::executor_type>;
 
   ServerImplStream(asio::io_context &    ioContext,
                    Endpoint              endpoint,
@@ -248,8 +258,6 @@ public:
     acceptor_.set_option(typename Acceptor::reuse_address(true));
     acceptor_.bind(endpoint);
     acceptor_.listen(Socket::max_listen_connections);
-
-    strandPtr_ = std::make_shared<Strand>(acceptor_.get_executor());
   }
 
   void startAccepting() noexcept override {
@@ -294,13 +302,11 @@ private:
 
     reenter(this) {
       for (;;) {
-        yield acceptor_.async_accept(
-            asio::bind_executor(*strandPtr_,
-                                std::bind(&ServerImplStream::operator(),
-                                          this,
-                                          std::move(self),
-                                          std::placeholders::_1,
-                                          std::placeholders::_2)));
+        yield acceptor_.async_accept(std::bind(&ServerImplStream::operator(),
+                                               this,
+                                               std::move(self),
+                                               std::placeholders::_1,
+                                               std::placeholders::_2));
 
         LOG_DEBUG("accept new connection");
         try {
@@ -334,10 +340,9 @@ private:
 
 
 private:
-  asio::io_context &      ioContext_;
-  std::shared_ptr<Strand> strandPtr_;
-  Acceptor                acceptor_;
-  RequestHandlerFactory   reqHandlerFactory_;
+  asio::io_context &    ioContext_;
+  Acceptor              acceptor_;
+  RequestHandlerFactory reqHandlerFactory_;
 
   std::list<SessionPtr> sessions_;
 };
